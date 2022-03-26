@@ -124,6 +124,11 @@ Resources:
     Properties:
       SubnetId: !Ref PublicSubnetB
       RouteTableId: !Ref PublicRouteTable
+  PublicSubneCBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
   PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
