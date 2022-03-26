@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# This CloudFormation template deploys a basic VPC / Network.  Specifically:
+# It deploys a VPC with 5 subnets (3 public, 2 private) across 3 Availability Zones
+# A NAT Gateway is used to provide egress for private subnets.
+# The VPC and subnets are exported for use by other stacks.
+
+Description: "default vpc"
+Parameters:
+  StackName:
+    Type: String
+    Default: "default-vpc-template"
+    Description: "Name of Stack"
+Resources:
+  DefaultVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "172.31.0.0/16"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Default
+          Value: Production
+  # Gives VPC access to internet
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    DependsOn: DefaultVPC
+  # You can't attach an IGW to a VPC until both are created
+  AttachGateway:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Create a size /20 default subnet in each Availability Zone. This provides up to 4,096 addresses per subnet, a few of which are reserved for AWS use.
+  # Create a size /20 private subnet in AZ a, c
+  PublicSubnetA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: "172.31.0.0/20"
+      AvailabilityZone: "us-east-1a"
+      Tags:
+        - Key: PublicSubnetA
+          Value: DefaultVPC
+  PublicSubnetB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: "172.31.16.0/20"
+      AvailabilityZone: "us-east-1b"
+      Tags:
+        - Key: PublicSubnetB
+          Value: DefaultVPC
+  PublicSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: "172.31.32.0/20"
+      AvailabilityZone: "us-east-1c"
+      Tags:
+        - Key: PublicSubnetC
+          Value: DefaultVPC
+  PrivateSubnetA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: "172.31.64.0/20"
+      AvailabilityZone: "us-east-1a"
+      Tags:
+        - Key: PrivateSubnetA
+          Value: DefaultVPC
+  PrivateSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: "172.31.92.0/20"
+      AvailabilityZone: "us-east-1c"
+      Tags:
+        - Key: PrivateSubnetC
+          Value: DefaultVPC
+
+  # route tables
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      Tags:
+        - Key: Name
+          Value: Public
+  PublicRoute1:
+    Type: "AWS::EC2::Route"
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref DefaultVPC
+      Tags:
+        - Key: Name
+          Value: Private
+  PrivateRoute1:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      # route traffic through a NAT Gateway
+      NatGatewayId: !Ref NATGateway
+
+  # Attach the public subnets to public route tables,
+  # and attach the private subnets to private route tables:
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+
+  # A NAT Gateway:
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub NAT-${AWS::StackName}
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
